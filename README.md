@@ -3,6 +3,10 @@
 
 A single-page web app that suggests **quick Indian recipes** from ingredients or a short prompt, powered by AI (Gemini or Grok). Results can be downloaded as TXT, PDF, or DOCX.
 
+@ Demo
+
+Try it at   https://jaldikhana.vercel.app/
+
 ## Tech stack
 
 - **Next.js** (App Router), **TypeScript**, **Zustand**, **Tailwind CSS**, PWA manifest
