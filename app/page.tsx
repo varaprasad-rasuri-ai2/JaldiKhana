@@ -1,8 +1,18 @@
-import { InputBox } from "@/components/InputBox";
+'use client';
+
 import { GenerateSection } from "@/components/GenerateSection";
+import { InputBox } from "@/components/InputBox";
 import { ResultsSection } from "@/components/ResultsSection";
+import { useEffect } from "react";
+import { useStore } from "@/store/store";
 
 export default function Home() {
+  const { inputText, setInputText, error } = useStore();
+
+  useEffect(() => {
+    setInputText("I have rice, dal, onion, etc. Need lunch in 20 minutes.");
+  }, []);
+
   return (
     <div className="min-h-screen w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <header className="mb-6 text-center sm:mb-8">

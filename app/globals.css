@@ -1,6 +1,21 @@
-@tailwind base;
+/* @tailwind base;
 @tailwind components;
-@tailwind utilities;
+@tailwind utilities; */
+
+@import "tailwindcss";
+
+@theme {
+  --color-spice-50: #fef7ee;
+  --color-spice-100: #fdedd6;
+  --color-spice-200: #f9d7ac;
+  --color-spice-300: #f4ba77;
+  --color-spice-400: #ee9340;
+  --color-spice-500: #ea751a;
+  --color-spice-600: #db5b10;
+  --color-spice-700: #b54410;
+  --color-spice-800: #903615;
+  --color-spice-900: #742f14;
+}
 
 :root {
   --foreground: #1a1a1a;
