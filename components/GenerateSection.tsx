@@ -40,12 +40,12 @@ export function GenerateSection() {
   };
 
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
       <button
         type="button"
         onClick={handleGenerate}
         disabled={loading}
-        className="inline-flex items-center gap-2 rounded-xl bg-spice-500 px-6 py-3 font-semibold text-white shadow-md transition hover:bg-spice-600 disabled:opacity-70 disabled:cursor-not-allowed"
+        className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-spice-500 px-6 py-3 font-semibold text-white shadow-md transition hover:bg-spice-600 disabled:cursor-not-allowed disabled:opacity-70 sm:flex-initial"
       >
         {loading ? (
           <>
@@ -60,7 +60,7 @@ export function GenerateSection() {
         type="button"
         onClick={clear}
         disabled={loading}
-        className="rounded-xl border-2 border-gray-300 bg-white px-6 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+        className="min-h-[48px] rounded-xl border-2 border-gray-300 bg-white px-6 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 sm:flex-initial"
       >
         Clear
       </button>

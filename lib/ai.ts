@@ -1,4 +1,5 @@
 import type { Recipe } from "@/types";
+import { jsonrepair } from "jsonrepair";
 
 const BASE_PROMPT = `You are an Indian home cook. Suggest 2-3 easy recipes in 10-30 minutes using ONLY the ingredients provided by the user. Do NOT add any extra ingredients. Make it kid-friendly. Return only valid JSON, no other text.`;
 
@@ -35,119 +36,19 @@ function sanitizeJson(raw: string): string {
   // Extract first [...] array if there's extra text
   const arrayMatch = s.match(/\[[\s\S]*\]/);
   if (arrayMatch) s = arrayMatch[0];
-  // Remove trailing commas before } or ] (invalid in JSON)
-  s = s.replace(/,(\s*[}\]])/g, "$1");
-  // Remove newlines that appear between JSON tokens
-  s = s.replace(/(\s*\n\s*)/g, " ");
-  // Remove multiple spaces
-  s = s.replace(/\s+/g, " ");
-  // Fix missing comma between properties: "title":"x" "time" → "title":"x", "time"
-  s = s.replace(/"(\s+)"(\s*:)/g, '", $2');
   return s;
-}
-
-/**
- * Repair JSON broken by AI: literal newlines, unescaped quotes, missing commas, etc.
- * "Unterminated string" usually means the model put a newline or " inside a value.
- */
-function repairJsonStringValues(s: string): string {
-  let out = "";
-  let i = 0;
-  let inString = false;
-  let escape = false;
-
-  function peekAhead(from: number): string {
-    let j = from;
-    while (j < s.length && /[\s\n\r]/.test(s[j])) j++;
-    return s[j] ?? "";
-  }
-
-  while (i < s.length) {
-    const c = s[i];
-    if (escape) {
-      if (c === "\n" || c === "\r") {
-        out += "\\n";
-      } else {
-        out += c;
-      }
-      escape = false;
-      i++;
-      continue;
-    }
-    if (c === "\\") {
-      out += c;
-      escape = true;
-      i++;
-      continue;
-    }
-    if (c === '"' && !inString) {
-      inString = true;
-      out += c;
-      i++;
-      continue;
-    }
-    if (c === '"' && inString) {
-      const next = peekAhead(i + 1);
-      if (next === "" || next === ":" || next === "," || next === "}" || next === "]" || next === '"') {
-        inString = false;
-        out += c;
-        i++;
-        continue;
-      }
-      // Unescaped quote inside string - escape it
-      out += '\\"';
-      i++;
-      continue;
-    }
-    if (inString) {
-      if (c === "\n" || c === "\r") {
-        out += "\\n";
-        i++;
-        continue;
-      }
-      // Handle backslash before special chars inside strings
-      if (c === "\\") {
-        const next = s[i + 1];
-        if (next === '"' || next === "n" || next === "r" || next === "\\") {
-          out += c;
-          i++;
-          continue;
-        }
-        // Remove stray backslashes that break JSON
-        i++;
-        continue;
-      }
-      out += c;
-      i++;
-      continue;
-    }
-    // Add missing commas between properties (e.g., "title":"x" "time":"y" → "title":"x", "time":"y")
-    if (c === '"' && i > 0) {
-      const prev = s[i - 1];
-      const next = peekAhead(i);
-      if (prev === '"' && (next === '"' || next === '{' || next === '[')) {
-        out = out.slice(0, -1) + '",';
-        out += '"';
-        i++;
-        continue;
-      }
-    }
-    out += c;
-    i++;
-  }
-  return out;
 }
 
 function parseRecipeJson(text: string): Recipe[] {
   const sanitized = sanitizeJson(text);
-  const jsonStr = repairJsonStringValues(sanitized);
+  // Use jsonrepair library to fix any JSON issues
+  const repaired = jsonrepair(sanitized);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(jsonStr);
+    parsed = JSON.parse(repaired);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    // Log the problematic JSON for debugging
-    console.error("JSON parsing failed. Sanitized JSON:", jsonStr);
+    console.error("JSON parsing failed. Repaired JSON:", repaired);
     throw new Error(`Invalid recipe JSON from AI: ${msg}`);
   }
   return normalizeParsedRecipes(parsed);
@@ -195,8 +96,8 @@ export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
     throw new Error("GEMINI_KEY is not set in .env.local");
   }
 
-  // gemini-2.5-flash: stable, good free-tier quota (separate from 2.0-flash)
-  const model = "gemini-2.5-flash";
+  // gemini-2.5-flash-lite: free tier, optimized for cost/latency
+  const model = "gemini-2.5-flash-lite";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
   const body = {
     contents: [{ parts: [{ text: buildPrompt(userInput) }] }],
@@ -238,6 +139,11 @@ export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
   const bodyText = await res.text();
   if (!res.ok) {
     if (res.status === 429) {
+      const grokKey = process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY;
+      if (grokKey) {
+        console.warn("Gemini quota exceeded (429). Falling back to Grok.");
+        return await generateWithGrok(userInput);
+      }
       throw new Error(
         "Gemini quota exceeded. Wait a minute and try again, or add GROK_KEY in .env.local to use Grok as backup."
       );
@@ -267,7 +173,7 @@ export async function generateWithGrok(userInput: string): Promise<Recipe[]> {
 
   const url = "https://api.x.ai/v1/chat/completions";
   const body = {
-    model: "grok-3-fast",
+    model: "grok-3-mini",
     messages: [
       {
         role: "system",
@@ -305,20 +211,112 @@ export async function generateWithGrok(userInput: string): Promise<Recipe[]> {
   return parseRecipeJson(text);
 }
 
+export async function generateWithOpenAI(userInput: string): Promise<Recipe[]> {
+  const key = process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+  if (!key) {
+    throw new Error("OPENAI_API_KEY is not set in .env.local");
+  }
+
+  const url = "https://api.openai.com/v1/chat/completions";
+  const body = {
+    model: "gpt-4o-mini", // cheapest OpenAI model (no free API tier)
+    messages: [
+      {
+        role: "system",
+        content: BASE_PROMPT + "\n\nReturn only a JSON array. No markdown, no explanation.",
+      },
+      { role: "user", content: userInput },
+    ],
+    temperature: 0.7,
+    max_tokens: 2048,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenAI API error: ${res.status} - ${errText}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  const text = data.choices?.[0]?.message?.content ?? "";
+  if (!text) {
+    throw new Error("OpenAI returned no content");
+  }
+
+  return parseRecipeJson(text);
+}
+
+function isQuotaError(err: Error): boolean {
+  const msg = err.message.toLowerCase();
+  return msg.includes("quota") || msg.includes("429") || msg.includes("rate limit");
+}
+
 export async function generateRecipes(userInput: string): Promise<Recipe[]> {
   const trimmed = userInput.trim();
   if (!trimmed) {
     throw new Error("Please enter ingredients or a cooking prompt");
   }
 
+  const hasGemini = !!(process.env.GEMINI_KEY ?? process.env.NEXT_PUBLIC_GEMINI_KEY);
+  const hasGrok = !!(process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY);
+  const hasOpenAI = !!(process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY);
+
+  if (!hasGemini && !hasGrok && !hasOpenAI) {
+    throw new Error("No AI API key configured. Add GEMINI_KEY, GROK_KEY, or OPENAI_API_KEY in .env.local");
+  }
+
+  const tryFallbacks = async (lastErr: unknown): Promise<Recipe[]> => {
+    if (hasGrok) {
+      try {
+        return await generateWithGrok(trimmed);
+      } catch (e) {
+        if (hasOpenAI) {
+          try {
+            return await generateWithOpenAI(trimmed);
+          } catch {
+            throw lastErr;
+          }
+        }
+        throw lastErr;
+      }
+    }
+    if (hasOpenAI) return await generateWithOpenAI(trimmed);
+    throw lastErr;
+  };
+
   try {
-    if (process.env.GEMINI_KEY ?? process.env.NEXT_PUBLIC_GEMINI_KEY) {
-      return await generateWithGemini(trimmed);
+    if (hasGemini) {
+      try {
+        return await generateWithGemini(trimmed);
+      } catch (geminiErr) {
+        if ((hasGrok || hasOpenAI) && geminiErr instanceof Error && isQuotaError(geminiErr)) {
+          return await tryFallbacks(geminiErr);
+        }
+        throw geminiErr;
+      }
     }
-    if (process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY) {
-      return await generateWithGrok(trimmed);
+    if (hasGrok) {
+      try {
+        return await generateWithGrok(trimmed);
+      } catch (grokErr) {
+        if (hasOpenAI && grokErr instanceof Error && isQuotaError(grokErr)) {
+          return await generateWithOpenAI(trimmed);
+        }
+        throw grokErr;
+      }
     }
-    throw new Error("No AI API key configured. Add GEMINI_KEY or GROK_KEY in .env.local");
+    return await generateWithOpenAI(trimmed);
   } catch (err) {
     if (err instanceof Error) {
       if (err.message.includes("fetch") || err.message.includes("network")) {

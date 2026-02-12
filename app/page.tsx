@@ -4,18 +4,18 @@ import { ResultsSection } from "@/components/ResultsSection";
 
 export default function Home() {
   return (
-    <div className="mx-auto min-h-screen max-w-3xl px-4 py-8">
-      <header className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-spice-700 sm:text-4xl">
+    <div className="min-h-screen w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <header className="mb-6 text-center sm:mb-8">
+        <h1 className="text-2xl font-bold text-spice-700 sm:text-4xl">
           JaldiKhana
         </h1>
-        <p className="mt-1 text-gray-600">
+        <p className="mt-1 text-sm text-gray-600 sm:text-base">
           Quick Indian recipes from your ingredients
         </p>
       </header>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-spice-700">
+      <section className="mb-6 sm:mb-8">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-spice-700 sm:text-sm">
           What do you have?
         </h2>
         <InputBox />
@@ -26,8 +26,8 @@ export default function Home() {
 
       <ResultsSection />
 
-      <footer className="mt-16 border-t border-spice-200 pt-6 text-center text-sm text-gray-500">
-        JaldiKhana – Quick Indian Recipes. For learning use.
+      <footer className="mt-12 border-t border-spice-200 pt-6 text-center text-xs text-gray-500 sm:mt-16 sm:text-sm">
+        JaldiKhana - Easy Indian recipes in minutes.
       </footer>
     </div>
   );

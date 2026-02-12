@@ -1,7 +1,10 @@
-
 # JaldiKhana
 
-A single-page web app that suggests **quick Indian recipes** from ingredients or a short prompt, powered by AI (Gemini or Grok). Results can be downloaded as TXT, PDF, or DOCX.
+A single-page web app that suggests **quick Indian recipes** from ingredients or a short prompt, powered by AI (Gemini, Grok, or OpenAI). Results can be downloaded as TXT, PDF, or DOCX.
+
+## Demo
+
+Try it at [jaldikhana.vercel.app](https://jaldikhana.vercel.app/).
 
 ## Tech stack
 
@@ -19,6 +22,7 @@ A single-page web app that suggests **quick Indian recipes** from ingredients or
    - Add at least one key:
      - **Gemini:** [Get key](https://aistudio.google.com/apikey) → `GEMINI_KEY=your_key`
      - **Grok:** [Get key](https://console.x.ai) → `GROK_KEY=your_key`
+     - **OpenAI:** [Get key](https://platform.openai.com/api-keys) → `OPENAI_API_KEY=your_key`
 
 3. **Run**
    ```bash
@@ -48,7 +52,7 @@ A single-page web app that suggests **quick Indian recipes** from ingredients or
 /store
   store.ts           # Zustand
 /lib
-  ai.ts              # Gemini + Grok
+  ai.ts              # Gemini, Grok, OpenAI
   export.ts          # TXT, PDF, DOCX
 /types
   index.ts           # Recipe type
@@ -58,7 +62,7 @@ A single-page web app that suggests **quick Indian recipes** from ingredients or
 
 1. Push the repo to GitHub.
 2. Import the project in Vercel.
-3. Add `GEMINI_KEY` or `GROK_KEY` in Vercel → Settings → Environment Variables.
+3. Add `GEMINI_KEY`, `GROK_KEY`, and/or `OPENAI_API_KEY` in Vercel → Settings → Environment Variables.
 4. Deploy.
 
 ## PWA
