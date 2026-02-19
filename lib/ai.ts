@@ -1,7 +1,9 @@
 import type { Recipe } from "@/types";
 import { jsonrepair } from "jsonrepair";
 
-const BASE_PROMPT = `You are an Indian home cook. Suggest 2-3 easy recipes in 10-30 minutes using ONLY the ingredients provided by the user. Do NOT add any extra ingredients. Make it kid-friendly. Return only valid JSON, no other text.`;
+const BASE_PROMPT = `You are an Indian home cook. Suggest 2-3 easy recipes in 10-30 minutes using ONLY the ingredients provided by the user. Do NOT add any extra ingredients. Make it kid-friendly. Return only valid JSON array, no other text.
+
+CRITICAL: Every recipe MUST have a "tips" field with practical, non-empty cooking advice.`;
 
 const EXPECTED_JSON_SCHEMA = `[
   {
@@ -9,7 +11,7 @@ const EXPECTED_JSON_SCHEMA = `[
     "time": "string (e.g. 20 mins)",
     "ingredients": ["string"],
     "steps": ["string"],
-    "tips": "string"
+    "tips": "string (useful cooking tip or variation)"
   }
 ]`;
 
@@ -19,7 +21,10 @@ function buildPrompt(userInput: string): string {
 Format exactly like this (JSON array only):
 ${EXPECTED_JSON_SCHEMA}
 
-IMPORTANT: Use ONLY the ingredients mentioned by the user. Do NOT add any extra ingredients.
+IMPORTANT REQUIREMENTS:
+1. Use ONLY the ingredients mentioned by the user. Do NOT add any extra ingredients.
+2. MUST include a non-empty "tips" field for EACH recipe with a helpful cooking tip or variation.
+3. Include time in format like "20 mins" or "30 mins".
 
 User request: ${userInput}`;
 }
@@ -54,40 +59,106 @@ function parseRecipeJson(text: string): Recipe[] {
   return normalizeParsedRecipes(parsed);
 }
 
-function normalizeParsedRecipes(parsed: unknown): Recipe[] {
+/** Get string from object with possible key names (case-insensitive) */
+function getStr(obj: Record<string, unknown>, keys: string[]): string {
+  const lower: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string") lower[k.toLowerCase()] = v;
+  }
+  for (const k of keys) {
+    const v = lower[k.toLowerCase()];
+    if (v != null) return v;
+  }
+  return "";
+}
 
+/** Get string array from object */
+function getArr(obj: Record<string, unknown>, keys: string[]): string[] {
+  const lower: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    lower[k.toLowerCase()] = v;
+  }
+  for (const k of keys) {
+    const v = lower[k.toLowerCase()];
+    if (Array.isArray(v)) return v.map(String);
+  }
+  return [];
+}
+
+function normalizeParsedRecipes(parsed: unknown): Recipe[] {
   if (!Array.isArray(parsed)) {
     throw new Error("AI did not return a JSON array");
   }
 
   const recipes: Recipe[] = [];
   for (const item of parsed) {
-    if (
-      item &&
-      typeof item === "object" &&
-      "title" in item &&
-      "time" in item &&
-      "ingredients" in item &&
-      "steps" in item &&
-      "tips" in item
-    ) {
-      recipes.push({
-        title: String(item.title),
-        time: String(item.time),
-        ingredients: Array.isArray(item.ingredients)
-          ? item.ingredients.map(String)
-          : [],
-        steps: Array.isArray(item.steps) ? item.steps.map(String) : [],
-        tips: String(item.tips),
-      });
-    }
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const title = getStr(obj, ["title", "name", "recipe"]);
+    if (!title) continue;
+
+    const time = getStr(obj, ["time", "duration", "cooking_time", "prep_time"]);
+    const ingredients = getArr(obj, ["ingredients", "ingredient"]);
+    const steps = getArr(obj, ["steps", "instructions", "method", "directions"]);
+    const tips = getStr(obj, ["tips", "tip", "notes", "note"]);
+
+    if (steps.length === 0 && ingredients.length === 0) continue;
+
+    recipes.push({
+      title,
+      time: time || "—",
+      ingredients,
+      steps: steps.length ? steps : ["See ingredients and prepare as desired."],
+      tips: tips || "",
+    });
   }
 
   if (recipes.length === 0) {
-    throw new Error("No valid recipes in AI response");
+    const snippet = JSON.stringify(parsed).slice(0, 300);
+    throw new Error(`No valid recipes in AI response. Raw snippet: ${snippet}…`);
   }
 
   return recipes;
+}
+
+export async function generateWithOpenAI(userInput: string): Promise<Recipe[]> {
+  const key = process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+  if (!key) {
+    throw new Error("OPENAI_API_KEY is not set in .env.local");
+  }
+
+  const url = "https://api.openai.com/v1/chat/completions";
+  const body = {
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "user", content: buildPrompt(userInput) },
+    ],
+    temperature: 0.7,
+    max_tokens: 2048,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const bodyText = await res.text();
+  if (!res.ok) {
+    throw new Error(`OpenAI API error: ${res.status} - ${bodyText.slice(0, 200)}`);
+  }
+
+  const data = JSON.parse(bodyText) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = data.choices?.[0]?.message?.content ?? "";
+  if (!text) {
+    throw new Error("OpenAI returned no content");
+  }
+  return parseRecipeJson(text);
 }
 
 export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
@@ -96,8 +167,8 @@ export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
     throw new Error("GEMINI_KEY is not set in .env.local");
   }
 
-  // gemini-2.5-flash-lite: free tier, optimized for cost/latency
-  const model = "gemini-2.5-flash-lite";
+  // Use gemini-2.0-flash-exp: Free, experimental, best performance for free
+  const model = "gemini-2.0-flash-exp";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
   const body = {
     contents: [{ parts: [{ text: buildPrompt(userInput) }] }],
@@ -138,16 +209,6 @@ export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
 
   const bodyText = await res.text();
   if (!res.ok) {
-    if (res.status === 429) {
-      const grokKey = process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY;
-      if (grokKey) {
-        console.warn("Gemini quota exceeded (429). Falling back to Grok.");
-        return await generateWithGrok(userInput);
-      }
-      throw new Error(
-        "Gemini quota exceeded. Wait a minute and try again, or add GROK_KEY in .env.local to use Grok as backup."
-      );
-    }
     throw new Error(`Gemini API error: ${res.status} - ${bodyText.slice(0, 200)}`);
   }
 
@@ -165,6 +226,48 @@ export async function generateWithGemini(userInput: string): Promise<Recipe[]> {
   return parseRecipeJson(text);
 }
 
+export async function generateWithMistral(userInput: string): Promise<Recipe[]> {
+  const key = process.env.MISTRAL_API_KEY ?? process.env.NEXT_PUBLIC_MISTRAL_API_KEY;
+  if (!key) {
+    throw new Error("MISTRAL_API_KEY is not set in .env.local");
+  }
+
+  const url = "https://api.mistral.ai/v1/chat/completions";
+  const body = {
+    model: "mistral-small-latest",
+    messages: [
+      { role: "user", content: buildPrompt(userInput) },
+    ],
+    temperature: 0.7,
+    max_tokens: 2048,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const bodyText = await res.text();
+  if (!res.ok) {
+    throw new Error(`Mistral API error: ${res.status} - ${bodyText.slice(0, 200)}`);
+  }
+
+  const data = JSON.parse(bodyText) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  const text = data.choices?.[0]?.message?.content ?? "";
+  if (!text) {
+    throw new Error("Mistral returned no content");
+  }
+
+  return parseRecipeJson(text);
+}
+
 export async function generateWithGrok(userInput: string): Promise<Recipe[]> {
   const key = process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY;
   if (!key) {
@@ -173,13 +276,9 @@ export async function generateWithGrok(userInput: string): Promise<Recipe[]> {
 
   const url = "https://api.x.ai/v1/chat/completions";
   const body = {
-    model: "grok-3-mini",
+    model: "grok-3-fast",
     messages: [
-      {
-        role: "system",
-        content: BASE_PROMPT + "\n\nReturn only a JSON array. No markdown, no explanation.",
-      },
-      { role: "user", content: userInput },
+      { role: "user", content: buildPrompt(userInput) },
     ],
     temperature: 0.7,
     max_tokens: 2048,
@@ -194,72 +293,19 @@ export async function generateWithGrok(userInput: string): Promise<Recipe[]> {
     body: JSON.stringify(body),
   });
 
+  const bodyText = await res.text();
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Grok API error: ${res.status} - ${errText}`);
+    throw new Error(`Grok API error: ${res.status} - ${bodyText.slice(0, 200)}`);
   }
 
-  const data = (await res.json()) as {
+  const data = JSON.parse(bodyText) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
-
   const text = data.choices?.[0]?.message?.content ?? "";
   if (!text) {
     throw new Error("Grok returned no content");
   }
-
   return parseRecipeJson(text);
-}
-
-export async function generateWithOpenAI(userInput: string): Promise<Recipe[]> {
-  const key = process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-  if (!key) {
-    throw new Error("OPENAI_API_KEY is not set in .env.local");
-  }
-
-  const url = "https://api.openai.com/v1/chat/completions";
-  const body = {
-    model: "gpt-4o-mini", // cheapest OpenAI model (no free API tier)
-    messages: [
-      {
-        role: "system",
-        content: BASE_PROMPT + "\n\nReturn only a JSON array. No markdown, no explanation.",
-      },
-      { role: "user", content: userInput },
-    ],
-    temperature: 0.7,
-    max_tokens: 2048,
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenAI API error: ${res.status} - ${errText}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  const text = data.choices?.[0]?.message?.content ?? "";
-  if (!text) {
-    throw new Error("OpenAI returned no content");
-  }
-
-  return parseRecipeJson(text);
-}
-
-function isQuotaError(err: Error): boolean {
-  const msg = err.message.toLowerCase();
-  return msg.includes("quota") || msg.includes("429") || msg.includes("rate limit");
 }
 
 export async function generateRecipes(userInput: string): Promise<Recipe[]> {
@@ -269,61 +315,79 @@ export async function generateRecipes(userInput: string): Promise<Recipe[]> {
   }
 
   const hasGemini = !!(process.env.GEMINI_KEY ?? process.env.NEXT_PUBLIC_GEMINI_KEY);
-  const hasGrok = !!(process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY);
+  const hasMistral = !!(process.env.MISTRAL_API_KEY ?? process.env.NEXT_PUBLIC_MISTRAL_API_KEY);
   const hasOpenAI = !!(process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY);
+  const hasGrok = !!(process.env.GROK_KEY ?? process.env.NEXT_PUBLIC_GROK_KEY);
 
-  if (!hasGemini && !hasGrok && !hasOpenAI) {
-    throw new Error("No AI API key configured. Add GEMINI_KEY, GROK_KEY, or OPENAI_API_KEY in .env.local");
+  if (!hasGemini && !hasMistral && !hasOpenAI && !hasGrok) {
+    throw new Error(
+      "No AI API key configured. For free, add GEMINI_KEY from https://aistudio.google.com/app/apikey. Optionally: MISTRAL_API_KEY, OPENAI_API_KEY, or GROK_KEY."
+    );
   }
 
-  const tryFallbacks = async (lastErr: unknown): Promise<Recipe[]> => {
-    if (hasGrok) {
-      try {
-        return await generateWithGrok(trimmed);
-      } catch (e) {
-        if (hasOpenAI) {
-          try {
-            return await generateWithOpenAI(trimmed);
-          } catch {
-            throw lastErr;
-          }
-        }
-        throw lastErr;
-      }
-    }
-    if (hasOpenAI) return await generateWithOpenAI(trimmed);
-    throw lastErr;
-  };
+  // Fallback order: Gemini (free) → Mistral (free tier) → OpenAI (paid) → Grok (credits)
+  const providers = [
+    { name: "Gemini (Free)", fn: generateWithGemini, enabled: hasGemini },
+    { name: "Mistral (Free tier)", fn: generateWithMistral, enabled: hasMistral },
+    { name: "OpenAI (Paid)", fn: generateWithOpenAI, enabled: hasOpenAI },
+    { name: "Grok (Credits required)", fn: generateWithGrok, enabled: hasGrok },
+  ];
 
-  try {
-    if (hasGemini) {
-      try {
-        return await generateWithGemini(trimmed);
-      } catch (geminiErr) {
-        if ((hasGrok || hasOpenAI) && geminiErr instanceof Error && isQuotaError(geminiErr)) {
-          return await tryFallbacks(geminiErr);
-        }
-        throw geminiErr;
+  let lastError: Error | null = null;
+  const tried: string[] = [];
+  const errors: Array<{ provider: string; error: string }> = [];
+
+  for (const provider of providers) {
+    if (!provider.enabled) {
+      console.log(`⏭️  Skipping ${provider.name} (no API key)`);
+      continue;
+    }
+
+    tried.push(provider.name);
+    try {
+      console.log(`🔄 Trying ${provider.name}...`);
+      const result = await provider.fn(trimmed);
+      console.log(`✅ ${provider.name} succeeded!`);
+      return result;
+    } catch (err) {
+      if (err instanceof Error) {
+        lastError = err;
+        const errorMsg = err.message;
+        errors.push({ provider: provider.name, error: errorMsg });
+        console.warn(`❌ ${provider.name} failed:`);
+        console.warn(`   Error: ${errorMsg}`);
+        console.log(`   → Trying next provider...\n`);
       }
     }
-    if (hasGrok) {
-      try {
-        return await generateWithGrok(trimmed);
-      } catch (grokErr) {
-        if (hasOpenAI && grokErr instanceof Error && isQuotaError(grokErr)) {
-          return await generateWithOpenAI(trimmed);
-        }
-        throw grokErr;
-      }
-    }
-    return await generateWithOpenAI(trimmed);
-  } catch (err) {
-    if (err instanceof Error) {
-      if (err.message.includes("fetch") || err.message.includes("network")) {
-        throw new Error("No internet or server unreachable. Check your connection.");
-      }
-      throw err;
-    }
-    throw new Error("Something went wrong. Please try again.");
   }
+
+  // All providers failed - throw detailed error
+  console.error(`\n❌ All providers failed!`);
+  console.error(`Tried: ${tried.join(" → ")}\n`);
+  
+  // Show detailed errors for each provider
+  for (const err of errors) {
+    console.error(`${err.provider}: ${err.error}`);
+  }
+
+  if (lastError) {
+    if (lastError.message.includes("fetch") || lastError.message.includes("network")) {
+      throw new Error("No internet or server unreachable. Check your connection.");
+    }
+    const isCreditsError =
+      lastError.message.includes("403") ||
+      lastError.message.includes("credits") ||
+      lastError.message.includes("permission");
+    const geminiWasTried = tried.some((t) => t.toLowerCase().includes("gemini"));
+    if (isCreditsError && !geminiWasTried) {
+      throw new Error(
+        "No working AI credits. Use a free key: add GEMINI_KEY in .env.local from https://aistudio.google.com/app/apikey"
+      );
+    }
+    throw lastError;
+  }
+
+
+  throw new Error("All AI providers failed. Check browser console for details.");
 }
+

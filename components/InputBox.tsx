@@ -7,7 +7,7 @@ const PLACEHOLDER =
 const MAX_LENGTH = 1000;
 
 export function InputBox() {
-  const { inputText, setInputText, error } = useStore();
+  const { inputText, setInputText, error, loading } = useStore();
 
   return (
     <div className="w-full">
@@ -17,7 +17,8 @@ export function InputBox() {
         placeholder={PLACEHOLDER}
         maxLength={MAX_LENGTH}
         rows={4}
-        className="min-h-[7rem] w-full resize-y rounded-xl border-2 border-spice-200 bg-white px-3 py-3 text-base text-gray-800 placeholder-gray-500 transition focus:border-spice-500 focus:outline-none focus:ring-2 focus:ring-spice-500/20 sm:min-h-[8rem] sm:px-4"
+        disabled={loading}
+        className="min-h-[7rem] w-full resize-y rounded-lg border-2 border-spice-300 bg-white px-4 py-3 text-base text-gray-800 placeholder-gray-400 shadow-sm transition focus:border-spice-500 focus:outline-none focus:ring-2 focus:ring-spice-400/30 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 disabled:opacity-60 sm:min-h-[8rem] sm:px-5 sm:py-4"
         aria-label="Ingredients or cooking prompt"
       />
       <div className="mt-1 flex justify-between text-xs sm:text-sm">

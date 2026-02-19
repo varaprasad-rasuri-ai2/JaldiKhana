@@ -1,8 +1,7 @@
 import "./globals.css";
 
 import type { Metadata, Viewport } from "next";
-
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "JaldiKhana - Easy Indian Recipes in Minutes",
@@ -23,8 +22,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased overflow-x-hidden">{children}</body>
-      <Analytics/>
+      <body className="antialiased overflow-x-hidden">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

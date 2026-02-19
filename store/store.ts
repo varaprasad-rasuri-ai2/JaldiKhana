@@ -24,8 +24,8 @@ export const useStore = create<AppState>((set) => ({
   ...initialState,
   setInputText: (inputText) => set({ inputText, error: null }),
   setRecipes: (recipes) => set({ recipes, error: null, loading: false }),
-  setLoading: (loading) => set({ loading, error: loading ? null : undefined }),
-  setError: (error) => set({ error, loading: false }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
   clear: () =>
     set({
       inputText: "",

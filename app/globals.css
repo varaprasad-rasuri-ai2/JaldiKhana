@@ -27,3 +27,13 @@ body {
   background: var(--background);
   min-height: 100vh;
 }
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  animation: spinner-rotate 0.9s linear infinite;
+}

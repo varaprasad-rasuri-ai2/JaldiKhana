@@ -15,6 +15,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ recipes });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to generate recipes";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("API Error:", message);
+    
+    // Return more detailed error info for debugging
+    return NextResponse.json({ 
+      error: message,
+      details: process.env.NODE_ENV === "development" ? (err instanceof Error ? err.stack : "") : undefined
+    }, { status: 500 });
   }
 }
