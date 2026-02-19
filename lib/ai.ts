@@ -3,7 +3,11 @@ import { jsonrepair } from "jsonrepair";
 
 const BASE_PROMPT = `You are an Indian home cook. Suggest 2-3 easy recipes in 10-30 minutes using ONLY the ingredients provided by the user. Do NOT add any extra ingredients. Make it kid-friendly. Return only valid JSON array, no other text.
 
-CRITICAL: Every recipe MUST have a "tips" field with practical, non-empty cooking advice.`;
+CRITICAL CONSTRAINTS:
+1. Each recipe MUST be completable within 30 minutes of cooking time
+2. If an ingredient (like mutton, chicken, mushrooms) requires longer than 30 minutes to cook, EXCLUDE it from the recipe
+3. Suggest only recipes using the remaining ingredients that CAN be cooked in 30 minutes
+4. Every recipe MUST have a "tips" field with practical, non-empty cooking advice`;
 
 const EXPECTED_JSON_SCHEMA = `[
   {
@@ -325,12 +329,12 @@ export async function generateRecipes(userInput: string): Promise<Recipe[]> {
     );
   }
 
-  // Fallback order: Gemini (free) → Mistral (free tier) → OpenAI (paid) → Grok (credits)
+  // Fallback order: Mistral → Gemini → OpenAI → Grok
   const providers = [
-    { name: "Gemini (Free)", fn: generateWithGemini, enabled: hasGemini },
-    { name: "Mistral (Free tier)", fn: generateWithMistral, enabled: hasMistral },
-    { name: "OpenAI (Paid)", fn: generateWithOpenAI, enabled: hasOpenAI },
-    { name: "Grok (Credits required)", fn: generateWithGrok, enabled: hasGrok },
+    { name: "Mistral", fn: generateWithMistral, enabled: hasMistral },
+    { name: "Gemini", fn: generateWithGemini, enabled: hasGemini },
+    { name: "OpenAI", fn: generateWithOpenAI, enabled: hasOpenAI },
+    { name: "Grok", fn: generateWithGrok, enabled: hasGrok },
   ];
 
   let lastError: Error | null = null;

@@ -69,7 +69,6 @@ export function GenerateSection() {
       >
         {loading ? (
           <>
-            <span className="text-xl" aria-hidden>👋</span>
             <span className="inline-block h-5 w-5 animate-spin rounded-full border-4 border-white border-t-spice-200" />
             <span>Generating…</span>
           </>

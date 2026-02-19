@@ -49,9 +49,18 @@ export default function Home() {
           JaldiKhana
         </h1>
         <p className="mt-1 text-sm text-gray-600 sm:text-base">
-          Quick Indian recipes from your ingredients=12333
+          Quick Indian recipes from your ingredients
         </p>
       </header>
+
+      <div className="mb-6 rounded-lg border border-spice-200 bg-spice-50 p-4 sm:mb-8 sm:p-5">
+        <div className="flex items-start gap-2">
+          <span className="text-spice-700">ℹ️</span>
+          <p>
+            <strong className="text-spice-700">Note:</strong> Only ingredients that can prepare a dish within <strong>30 minutes</strong> will be considered. Some ingredients may be excluded if they require longer cooking times.
+          </p>
+        </div>
+      </div>
 
       <section className="mb-6 sm:mb-8">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-spice-700 sm:text-sm">
